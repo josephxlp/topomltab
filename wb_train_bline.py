@@ -97,38 +97,52 @@ def train_ctb_baseline(prt_files,parameters, model_dir, Xgrid, mode = 'dev'):
     dtrain, dvalid = train_test_split(df, test_size=0.15, random_state=42)
     dtrain = df.copy()
     numR = len(dtrain)
+    print(f'Training @ {str(Xgrid)}...')
     for ycol in ycols:
         wdir_roi = join(model_dir,str(Xgrid),roi)
         os.makedirs(wdir_roi, exist_ok=True)
-        
-        dvalid = dvalid.dropna(subset=[ycol])
-        dtrain = dtrain.dropna(subset=[ycol])
-        #print('dvalid',dvalid.isna().sum())
-        #print('dtrain',dtrain.isna().sum())
-        # ensure that data is all good!!!double-checking
 
-        X_vali = dvalid.drop(ycol, axis=1)
-        y_vali = dvalid[ycol]
-        val_data = Pool(X_vali, label=y_vali)
-
-        X_train = dtrain.drop(ycol, axis=1)
-        y_train = dtrain[ycol]
-        train_data = Pool(X_train, label=y_train)
-
-        model = CatBoostRegressor(**catboost_params)
-        model.fit(train_data, eval_set=val_data, verbose=100)
-        y_train_pred = model.predict(X_train)
-        y_val_pred = model.predict(X_vali)
-
-        metrics_df = performance(y_train, y_train_pred, y_vali, y_val_pred)
+        print(f'params @ {str(Xgrid)} ##{ycol}...nboost={nboost}')
         outname = f'{fname}_{roi}_{nboost}_{ycol}_{numR}_{numF}_{rnd_seed}_{mode}_{mx}'
         
-        # write all the params 
+        modelpath = join(wdir_roi, f'CTB_{outname}.cbm')
         
-        model.save_model(join(wdir_roi, f'CTB_{outname}.cbm'))
-        pickle_write(model, join(wdir_roi, f'CTB_{outname}.pkl'))
-        pickle_write(parameters, join(wdir_roi, f'PARAMS_{outname}.pkl')) # json or yaml 
-        metrics_df.to_csv(join(wdir_roi, f'{outname}.csv'))
+        #find a wa yo change this function so that if the modelpath already exist, dont even load the data 
+        # rea range the code but the name should be as unqiue as possible with as much prariable as possible like in the outname
+        if not os.path.isfile(modelpath):
+            print('training:::')
+            print(outname)
+    
+            dvalid = dvalid.dropna(subset=[ycol])
+            dtrain = dtrain.dropna(subset=[ycol])
+            #print('dvalid',dvalid.isna().sum())
+            #print('dtrain',dtrain.isna().sum())
+            # ensure that data is all good!!!double-checking
+
+            X_vali = dvalid.drop(ycol, axis=1)
+            y_vali = dvalid[ycol]
+            val_data = Pool(X_vali, label=y_vali)
+
+            X_train = dtrain.drop(ycol, axis=1)
+            y_train = dtrain[ycol]
+            train_data = Pool(X_train, label=y_train)
+
+            model = CatBoostRegressor(**catboost_params)
+            model.fit(train_data, eval_set=val_data, verbose=100)
+            y_train_pred = model.predict(X_train)
+            y_val_pred = model.predict(X_vali)
+
+            metrics_df = performance(y_train, y_train_pred, y_vali, y_val_pred)
+            # write all the params 
+        
+            model.save_model(modelpath)
+            pickle_write(model, join(wdir_roi, f'CTB_{outname}.pkl'))
+            pickle_write(parameters, join(wdir_roi, f'PARAMS_{outname}.pkl')) # json or yaml 
+            metrics_df.to_csv(join(wdir_roi, f'{outname}.csv'))
+        else:
+            print(f'Params already trained model at \n{outname}')
+        
+        
     
     tf = time.perf_counter() - ti 
     print('='*30)
@@ -138,14 +152,8 @@ def train_ctb_baseline(prt_files,parameters, model_dir, Xgrid, mode = 'dev'):
     print('ycols',ycols)
 
 
-
-# In[28]:
-
-
 from upaths import RESAMPLE_MODELS_PATH,RESAMPLE_TILES_DPATH
 from pprint import pprint
-
-# In[ ]:
 
 
 # version 2: S1,S1, AUX
@@ -167,8 +175,8 @@ def define_parameters():
 
     # CatBoost parameters
     catboost_params = {
-        'iterations': 100,
-        'depth': 16,
+        'iterations': 1000,#100,1000,5000
+        #'depth': 16,
         'loss_function': 'RMSE',
         'eval_metric': 'RMSE',
         'random_seed': 123,
@@ -190,6 +198,8 @@ def define_parameters():
 
     return parameters
 
+ti = time.perf_counter()
+
 Xgrid_list = [1000,500,90,30]# 12 too 
 #Xgrid = 500  
 parameters = define_parameters()
@@ -199,3 +209,8 @@ for Xgrid in Xgrid_list:
     print(len(prt_files))
     pprint(prt_files)
     train_ctb_baseline(prt_files, parameters, RESAMPLE_MODELS_PATH, Xgrid, mode = 'dep')
+
+
+tf = time.perf_counter() - ti 
+print('='*60)
+print(f'Run time = {tf/60:.2f} min(s)')
